@@ -1,2 +1,4 @@
 # IOCP-服务器
-利用windows的IOCP机制的服务端
+step1:利用windows的IOCP机制的服务端,实现客户端到服务器的高并发连接发送和接受数据
+step2：实现p2p功能，客户端连接服务器后可不经过服务器实现端对端传输
+step3:添加webserver功能
