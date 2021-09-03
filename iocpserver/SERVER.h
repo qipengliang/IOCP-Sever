@@ -28,12 +28,14 @@ private:
 	HANDLE m_iocp;
 	std::vector<SOCKADDR_IN*>clientadd;
 
-	void _doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes);
-	void _dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes);
-	void _postsend(So_context* socontext, Iocontex* iocontext);
-	void _dosend(So_context* socontext, Iocontex* iocontext);
+	void _doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes, DWORD threadid);
+	void _dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes, DWORD threadn);
+	BOOL _postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn, const std::string& OKformat,std::string dir);
+	void _dosend(So_context* socontext, Iocontex* iocontext, DWORD threadn);
+	void _dosendhtml(So_context* socontext, Iocontex* iocontext, DWORD threadn);
 	void remove(So_context* socontext, Iocontex* iocontext);
 	void init(Iocontex* iocontext);
+	void analyze(std::string& request);
 public:
 	static DWORD WINAPI workthread(LPVOID param);
 	SERVER(HANDLE IOCP);
