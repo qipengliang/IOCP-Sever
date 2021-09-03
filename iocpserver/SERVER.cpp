@@ -55,7 +55,7 @@ DWORD WINAPI SERVER::workthread(LPVOID parameter)
 								 
 								 
 								 std::cout << "accept"<< std::endl;
-								 iocpmodel->_doaccept(pSocontext, piocontext, lpnumberofbytes);
+								 iocpmodel->_doaccept(pSocontext, piocontext, lpnumberofbytes, para->threadid);
 		}
 			break;
 		case PostType::RECV:
@@ -65,12 +65,18 @@ DWORD WINAPI SERVER::workthread(LPVOID parameter)
 							   //2.重置iocontext,继续投递receive
 							   //3.新建iocontext,投递send
 							   std::cout << "recv" << std::endl;
-							   iocpmodel->_dorecv(pSocontext, piocontext, lpnumberofbytes);
+							   iocpmodel->_dorecv(pSocontext, piocontext, lpnumberofbytes, para->threadid);
 		}
 			break;
 		case PostType::SEND:
 		{
-							   iocpmodel->_dosend(pSocontext, piocontext);
+							   iocpmodel->_dosend(pSocontext, piocontext, para->threadid);
+		}
+			break;
+		case PostType::SENDHTML:
+		{
+								iocpmodel->_dosendhtml(pSocontext, piocontext, para->threadid);
+							   //closesocket(pSocontext->m_socket);
 		}
 			break;
 		}
@@ -80,7 +86,7 @@ DWORD WINAPI SERVER::workthread(LPVOID parameter)
 	return 0;
 	
 }
-void SERVER::_doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes)
+void SERVER::_doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes, DWORD threadn)
 {
 	//1.收集侦听socket，收集client地址
 	SOCKET listensocket = socontext->m_socket;
@@ -92,7 +98,7 @@ void SERVER::_doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumbe
 	if (lpnumberofbytes == 0)
 	{
 		
-		std::cout << "未传值,已连接addr:" << inet_ntoa(clientaddr->sin_addr) <<"port:" <<ntohs(clientaddr->sin_port)<<iocontext->m_socket<<std::endl;
+		std::cout << "未传值,已连接addr:" << threadn <<"port:" <<ntohs(clientaddr->sin_port)<<"socket:"<<iocontext->m_socket<<std::endl;
 	}
 	else
 	{
@@ -127,49 +133,78 @@ void SERVER::_doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumbe
 	const int nBytesRecv = WSARecv(iocon_new->m_socket,
 		&iocon_new->m_wsaBuf, 1, &dwBytes, &dwFlags,
 		&iocon_new->m_overlap, NULL);
-	_postsend(Socon_new, iocon_new);
+	//_postsend(Socon_new, iocon_new);
 
 	//6.
 	DWORD dwAddrLen = (sizeof(SOCKADDR_IN)+16);
 	m_lpfnAcceptEx(listensocket, iocontext->m_socket, iocontext->m_wsaBuf.buf, 0, dwAddrLen, dwAddrLen, &dwBytes, &iocontext->m_overlap);
+
+
 }
 
-void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes)
+void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes,DWORD threadn)
 {
 	char recv_result[MAX_BUFFERLEN];
 	memcpy(recv_result, iocontext->m_wsaBuf.buf, MAX_BUFFERLEN);
 	if (lpnumberofbytes==0)
 	{
-		std::cout << "关闭" << std::endl;		
-		closesocket(socontext->m_socket);
+		std::cout << "关闭" << socontext->m_socket << std::endl;
 		RELEASE_SOCKET(socontext->m_socket);
 	}
-	recv_result[lpnumberofbytes] = '/0';
-	std::cout << "receive:" << recv_result << std::endl;
-	
-	ZeroMemory(iocontext->m_buffer, sizeof(iocontext->m_buffer));
+	recv_result[lpnumberofbytes] = '\0';
+	std::cout << "receive:" << recv_result  << "thread:" << iocontext->m_socket << std::endl;
+	std::string req(recv_result);
+	int ind=req.find("GET");
+	std::string Head;
+	if (ind == 0)
+	{
+		int indend = req.find("HTTP");
+		std::string dir=req.substr(ind+4,indend-(ind+4));
+		std::cout << dir << std::endl;
+		if (dir == "/ ")
+		{
+			Head = "HTTP/1.1 200 OK\r\nContent-Type:text/html;charset = UTF-8\r\n\r\n";
+			dir = "C:\\Users\\ncslab\\Desktop\\C++ test\\多人聊天室\\多人聊天室\\server\\hellow.html";
+			_postsend(socontext, iocontext, threadn, Head,dir);
+		}
+		else 
+		{
+			Head = "HTTP/1.1 200 OK\r\nContent-Type:image\\jpeg;charset = UTF-8\r\n\r\n";
+			//send(iocontext->m_socket, Head.c_str(), Head.length(), 0);
+			analyze(dir);
+			dir = "C:\\Users\\ncslab\\Desktop\\C++ test\\多人聊天室\\多人聊天室\\server"+dir;
+			//FILE* pFile = NULL;
+			//fopen_s(&pFile, dir.c_str(), "rb");
+			//if (pFile == NULL)
+			//{
+			//	std::cout << "open file error";
+			//}
+			//fseek(pFile, 0, SEEK_END);//move fseek to EOF
+			//int bufferlength = ftell(pFile); //This is the length of file
+			//fseek(pFile, 0, SEEK_SET); //move back
+			//std::cout << "bufferlength" << bufferlength << std::endl;
+			//char buf[40960] = { 0 };
+			//fread(buf, bufferlength, 1, pFile); //read file to buff
+			//fclose(pFile);
+			//send(iocontext->m_socket, buf, bufferlength, 0);
+			std::cout << dir << std::endl;
+			_postsend(socontext, iocontext, threadn,Head, dir);
+		}
+	} 
+	/*ZeroMemory(iocontext->m_buffer, sizeof(iocontext->m_buffer));
 	iocontext->m_wsaBuf.len = MAX_BUFFERLEN;
 	iocontext->m_wsaBuf.buf = iocontext->m_buffer;
 	DWORD dwFlags = 0, dwBytes = 0;
 	const int nBytesRecv = WSARecv(iocontext->m_socket,
 		&iocontext->m_wsaBuf, 1, &dwBytes, &dwFlags,
-		&iocontext->m_overlap, NULL);
-	if (recv_result[lpnumberofbytes] == '/0')
-		_postsend(socontext, iocontext);
+		&iocontext->m_overlap, NULL);*/
+		
 
 }
 
-void SERVER::_postsend(So_context* socontext, Iocontex* iocontext)
+BOOL SERVER::_postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn ,const std::string& OKHeaderFormat,std::string dir)
 {
-	
-	char OKHeaderFormat[] =
-		"HTTP/1.1 200 OK\n"
-		"Accept-Ranges: bytes\n"
-		"Connection:Keep-Alive\n"
-		"Content-Type: text/html\n"
-		"charset = ISO-8859-1\n"
-		"Content-Length: %d\n"
-		"\r\n";
+	std::cout << OKHeaderFormat << std::endl;
 	Iocontex* iocon_new_head=new Iocontex;
 	/*std::string report = "HTTP/1.1 200 ok\r\nconnection: close\r\n\r\n";
 	memcpy(iocon_new->m_buffer, report.c_str(), sizeof(report));
@@ -177,57 +212,83 @@ void SERVER::_postsend(So_context* socontext, Iocontex* iocontext)
 	iocon_new->m_wsaBuf.buf = iocon_new->m_buffer;*/
 	iocon_new_head->m_PostType = PostType::SEND;
 	iocon_new_head->m_socket = iocontext->m_socket;
-	memcpy(iocon_new_head->m_buffer, OKHeaderFormat, sizeof(OKHeaderFormat));
-	iocon_new_head->m_wsaBuf.len = sizeof(OKHeaderFormat);
+	memcpy(iocon_new_head->m_buffer, OKHeaderFormat.c_str(), OKHeaderFormat.length());
+	iocon_new_head->m_wsaBuf.len = OKHeaderFormat.length();
 	iocon_new_head->m_wsaBuf.buf = iocon_new_head->m_buffer;
+		socontext->array_IoContext.push_back(iocon_new_head);
+		const DWORD dwFlags = 0;
+		DWORD dwSendNumBytes = 0;
+		const int nRet = WSASend(iocon_new_head->m_socket,
+			&iocon_new_head->m_wsaBuf, 1, &dwSendNumBytes, dwFlags,
+			&iocon_new_head->m_overlap, NULL);
+		std::cout << "post head" <<iocontext->m_socket<< std::endl;
+		Iocontex* iocon_new_body = new Iocontex;
+		/*std::string report = "HTTP/1.1 200 ok\r\nconnection: close\r\n\r\n";
+		memcpy(iocon_new->m_buffer, report.c_str(), sizeof(report));
+		iocon_new->m_wsaBuf.len = sizeof(report);
+		iocon_new->m_wsaBuf.buf = iocon_new->m_buffer;*/
+		iocon_new_body->m_PostType = PostType::SENDHTML;
+		iocon_new_body->m_socket = iocontext->m_socket;
+		std::string filename =dir;
+		FILE* pFile = NULL;
+		fopen_s(&pFile, filename.c_str(), "rb");
+		if (pFile == NULL)
+		{
+			std::cout << "open file error" << iocontext->m_socket;
+			return 0;
+		}
+		fseek(pFile, 0, SEEK_END);//move fseek to EOF
+		int bufferlength = ftell(pFile); //This is the length of file
+		iocon_new_body->m_buffer[bufferlength] = '\0';
+		bufferlength++; // place for'\0'
+		fseek(pFile, 0, SEEK_SET); //move back
+		std::cout << "bufferlength" << bufferlength << std::endl;
+		fread(iocon_new_body->m_buffer, bufferlength, 1, pFile); //read file to buff
+		fclose(pFile);
 
-	socontext->array_IoContext.push_back(iocon_new_head);
-	const DWORD dwFlags = 0;
-	DWORD dwSendNumBytes = 0;
-	const int nRet = WSASend(iocon_new_head->m_socket,
-		&iocon_new_head->m_wsaBuf, 1, &dwSendNumBytes, dwFlags,
-		&iocon_new_head->m_overlap, NULL);
+		//memcpy(iocon_new_body->m_buffer, OKHeaderFormat, sizeof(OKHeaderFormat));
+		iocon_new_body->m_wsaBuf.len = bufferlength;
+		iocon_new_body->m_wsaBuf.buf = iocon_new_body->m_buffer;
+		socontext->array_IoContext.push_back(iocon_new_body);
+		const DWORD dwFlags_1 = 0;
+		DWORD dwSendNumBytes_1 = 0;
 
-	Iocontex* iocon_new_body = new Iocontex;
-	/*std::string report = "HTTP/1.1 200 ok\r\nconnection: close\r\n\r\n";
-	memcpy(iocon_new->m_buffer, report.c_str(), sizeof(report));
-	iocon_new->m_wsaBuf.len = sizeof(report);
-	iocon_new->m_wsaBuf.buf = iocon_new->m_buffer;*/
-	iocon_new_body->m_PostType = PostType::SEND;
-	iocon_new_body->m_socket = iocontext->m_socket;
-	std::string filename = "C:\\Users\\ncslab\\Desktop\\C++ test\\多人聊天室\\多人聊天室\\server\\hellow.html";
-	FILE* pFile = NULL;
-	fopen_s(&pFile, filename.c_str(), "r");
-	if (pFile == NULL)
-	{
-		std::cout << "open file error";
-	}
-	fseek(pFile, 0, SEEK_END);//move fseek to EOF
-	int bufferlength = ftell(pFile); //This is the length of file
-	iocon_new_body->m_buffer[bufferlength] = '\0';
-	bufferlength++; // place for'\0'
-	fseek(pFile, 0, SEEK_SET); //move back
-
-	fread(iocon_new_body->m_buffer, bufferlength, 1, pFile); //read file to buff
-	fclose(pFile);
+		const int nRet_1 = WSASend(iocon_new_body->m_socket,
+			&iocon_new_body->m_wsaBuf, 1, &dwSendNumBytes_1, dwFlags_1,
+			&iocon_new_body->m_overlap, NULL);
+		std::cout << "sb" << dwSendNumBytes_1 << std::endl;
+		if (SOCKET_ERROR == nRet_1)
+		{ //WSAENOTCONN=10057L
+			int nErr = WSAGetLastError();
+			if (WSA_IO_PENDING != nErr)
+			{// Overlapped I/O operation is in progress.
+				std::cout << "投递WSASend失败！err=%d" << std::endl;
+			}
+		}
+		return 1;
+		
 	
-	//memcpy(iocon_new_body->m_buffer, OKHeaderFormat, sizeof(OKHeaderFormat));
-	iocon_new_body->m_wsaBuf.len = bufferlength;
-	iocon_new_body->m_wsaBuf.buf = iocon_new_body->m_buffer;
-	socontext->array_IoContext.push_back(iocon_new_body);
-	const DWORD dwFlags_1 = 0;
-	DWORD dwSendNumBytes_1 = 0;
-	const int nRet_1 = WSASend(iocon_new_body->m_socket,
-		&iocon_new_body->m_wsaBuf, 1, &dwSendNumBytes_1, dwFlags_1,
-		&iocon_new_body->m_overlap, NULL);
 }
 
-void SERVER::_dosend(So_context* socontext, Iocontex* iocontext)
+void SERVER::_dosend(So_context* socontext, Iocontex* iocontext, DWORD threadn)
 {
-	std::cout << "已回复收到" << std::endl;
+	
+	std::cout << "already send head " << std::endl;
+	//closesocket(socontext->m_socket);
 	remove(socontext, iocontext);
+	
 }
 
+void SERVER::_dosendhtml(So_context* socontext, Iocontex* iocontext, DWORD threadn)
+{
+
+	std::cout << "close" << iocontext->m_socket<< std::endl;
+	Sleep(100);
+	closesocket(iocontext->m_socket);
+	remove(socontext, iocontext);
+
+	
+}
 
 void SERVER::remove(So_context* socontext, Iocontex* iocontext)
 {
@@ -254,5 +315,20 @@ void SERVER::init(Iocontex* iocontext)
 		SIO_GET_EXTENSION_FUNCTION_POINTER, &GuidAcceptEx,
 		sizeof(GuidAcceptEx), &m_lpfnAcceptEx,
 		sizeof(m_lpfnAcceptEx), &dwBytes, NULL, NULL);
+}
+void SERVER::analyze(std::string& request)
+{
+	int ind = 0;
+	while (ind != -1)
+	{
+		int indl = ind;
+		ind=request.find('/',ind);
+		if (ind != -1)
+		{
+			request.erase(ind, 1);
+			request.insert(ind, "\\");    
+			std::cout << request << std::endl;
+		}	
+	}
 }
 
