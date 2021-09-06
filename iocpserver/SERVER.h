@@ -26,7 +26,6 @@ private:
 	LPFN_GETACCEPTEXSOCKADDRS m_lpfnGetAcceptExSockAddrs;
 	//struct sockaddr_in sever_add;
 	HANDLE m_iocp;
-	std::vector<SOCKADDR_IN*>clientadd;
 
 	void _doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes, DWORD threadid);
 	void _dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes, DWORD threadn);
@@ -34,10 +33,13 @@ private:
 	void _dosend(So_context* socontext, Iocontex* iocontext, DWORD threadn);
 	void _dosendhtml(So_context* socontext, Iocontex* iocontext, DWORD threadn);
 	void remove(So_context* socontext, Iocontex* iocontext);
-	void init(Iocontex* iocontext);
+	void removeso(So_context* socontext);
 	void analyze(std::string& request);
 public:
+	std::vector<So_context*>solist;
+	CRITICAL_SECTION Cri_list;
 	static DWORD WINAPI workthread(LPVOID param);
+	void init(SOCKET sock);
 	SERVER(HANDLE IOCP);
 	~SERVER();
 };
