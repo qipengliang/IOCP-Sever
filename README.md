@@ -10,5 +10,6 @@ https://github.com/gaojs/IOCPServer
 2021-08-05 实现iocp并发服务器于客户端的基本通讯和并发（未测试）  
 2021-08-15 实现web服务器的基本功能改造，即向网页发送html，但存在最后发送的文件在closesocket后丢失的问题，暂时用sleep解决，原因待查。  
 2021-09-03 实现了web服务器的get功能  
-2021-09-06 增加vector<Socontext*> solist 管理创建的socket上下文资源，并添加了必要的注释
+2021-09-06 增加vector<Socontext*> solist 管理创建的socket上下文资源，并添加了必要的注释  
+2021-09-10 修复了一部分内存泄漏的问题，添加了表单信息提交模块，将提交的表单信息写入mysql数据库
 
