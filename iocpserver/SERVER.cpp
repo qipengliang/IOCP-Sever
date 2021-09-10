@@ -33,6 +33,7 @@ DWORD WINAPI SERVER::workthread(LPVOID parameter)
 		OVERLAPPED* lpoverlapped = nullptr;
 		//等待事件发生，若无事件发生则线程阻塞
 		const BOOL bRet = GetQueuedCompletionStatus(iocpmodel->m_iocp, &lpnumberofbytes, (PULONG_PTR)&pSocontext, &lpoverlapped, INFINITE);
+		std::cout<<pSocontext->m_socket;
 		//判断线程结束信号
 		if (NULL == (DWORD)pSocontext)
 		{
@@ -55,6 +56,7 @@ DWORD WINAPI SERVER::workthread(LPVOID parameter)
 								 //6.在侦听套接字上投递修改后的piocontext，pSocketcontext由于是指针，故已做更改
 	 
 								 std::cout << "accept"<< std::endl;
+								 
 								 iocpmodel->_doaccept(pSocontext, piocontext, lpnumberofbytes, para->threadid);
 		}
 			break;
@@ -110,28 +112,30 @@ void SERVER::_doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumbe
 	iocon_new->m_PostType = PostType::RECV;
 	Socon_new->m_socket = iocontext->m_socket;
 	Socon_new->array_IoContext.push_back(iocon_new);
-	memcpy(&(Socon_new->m_ClientAddr),
-		clientaddr, sizeof(SOCKADDR_IN));
+	memcpy(&(Socon_new->m_ClientAddr),clientaddr, sizeof(SOCKADDR_IN));
 
 	EnterCriticalSection(&Cri_list);
 	solist.push_back(Socon_new);
 	LeaveCriticalSection(&Cri_list);
 
-	remove(socontext, iocontext);
+	//remove(socontext, iocontext);
 	//3.
-	iocontext = new Iocontex;
+	ZeroMemory(iocontext->m_buffer, sizeof(iocontext->m_buffer));
+	iocontext->m_wsaBuf.buf = iocontext->m_buffer;
 	iocontext->m_PostType = PostType::ACCEPT;
 	iocontext->m_socket = WSASocket(AF_INET, SOCK_STREAM,
 		IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
 	socontext->array_IoContext.push_back(iocontext);
+	
 
     //5.
-	CreateIoCompletionPort((HANDLE)iocon_new->m_socket, m_iocp, (DWORD)Socon_new, 0);
+	CreateIoCompletionPort((HANDLE)iocon_new->m_socket, m_iocp, (ULONG_PTR)Socon_new, 0);
 	DWORD dwFlags = 0, dwBytes = 0;
 	// 初始化完成后，投递WSARecv请求
 	const int nBytesRecv = WSARecv(iocon_new->m_socket,
 		&iocon_new->m_wsaBuf, 1, &dwBytes, &dwFlags,
 		&iocon_new->m_overlap, NULL);
+	Socon_new->array_IoContext.push_back(iocon_new);
 	//_postsend(Socon_new, iocon_new);
 
 	//6.
@@ -152,15 +156,14 @@ void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumbero
 	}
 	recv_result[lpnumberofbytes] = '\0';
 	std::cout << "receive:" << recv_result  << "thread:" << iocontext->m_socket << std::endl;
-
 	//解析请求，投递对应的数据
 	std::string req(recv_result);
-	int ind=req.find("GET");
+	std::string method = req.substr(0, 3);
 	std::string Head;
-	if (ind == 0)
+	if (method == "GET")
 	{
 		int indend = req.find("HTTP");
-		std::string dir=req.substr(ind+4,indend-(ind+4));
+		std::string dir=req.substr(4,indend-(4));
 		std::cout << dir << std::endl;
 		if (dir == "/ ")
 		{
@@ -168,7 +171,19 @@ void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumbero
 			dir = "C:\\Users\\ncslab\\Desktop\\C++ test\\多人聊天室\\多人聊天室\\server\\hellow.html";
 			_postsend(socontext, iocontext, threadn, Head,dir);
 		}
-		else 
+		else if (dir.find('/?') == 1)
+		{
+			int split = dir.find('&');
+			std::string username = dir.substr(11,split-11);
+			std::string password = dir.substr(split + 10);
+			std::cout << "用户名=" << username << "\n密码=" << password << std::endl;
+			Head = "HTTP/1.1 200 OK\r\nContent-Type:text/html;charset = UTF-8\r\n\r\n";
+			dir = "C:\\Users\\ncslab\\Desktop\\C++ test\\多人聊天室\\多人聊天室\\server\\acc.html";
+			_postsend(socontext, iocontext, threadn, Head, dir);
+           //调用线程池，建立线程任务，将usernme和password写入数据库
+			creatmysqltask();
+		}
+		else
 		{
 			Head = "HTTP/1.1 200 OK\r\nContent-Type:image\\jpeg;charset = UTF-8\r\n\r\n";
 			analyze(dir);
@@ -176,16 +191,19 @@ void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumbero
 			std::cout << dir << std::endl;
 			_postsend(socontext, iocontext, threadn,Head, dir);
 		}
-	} 
+	}
+
 }
 
 BOOL SERVER::_postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn ,const std::string& OKHeaderFormat,std::string dir)
 {
 	//投递发送http协议头
+	SOCKET recvsoc=iocontext->m_socket;
+	remove(socontext, iocontext);
 	std::cout << OKHeaderFormat << std::endl;
 	Iocontex* iocon_new_head=new Iocontex;
 	iocon_new_head->m_PostType = PostType::SEND;
-	iocon_new_head->m_socket = iocontext->m_socket;
+	iocon_new_head->m_socket = recvsoc;
 	memcpy(iocon_new_head->m_buffer, OKHeaderFormat.c_str(), OKHeaderFormat.length());
 	iocon_new_head->m_wsaBuf.len = OKHeaderFormat.length();
 	iocon_new_head->m_wsaBuf.buf = iocon_new_head->m_buffer;
@@ -195,19 +213,20 @@ BOOL SERVER::_postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn
 	const int nRet = WSASend(iocon_new_head->m_socket,
 			&iocon_new_head->m_wsaBuf, 1, &dwSendNumBytes, dwFlags,
 			&iocon_new_head->m_overlap, NULL);
-	std::cout << "post head" <<iocontext->m_socket<< std::endl;
+	std::cout << "post head" << recvsoc << std::endl;
 	//打开文件，投递发送数据
 	Iocontex* iocon_new_body = new Iocontex;
 	iocon_new_body->m_PostType = PostType::SENDHTML;
-	iocon_new_body->m_socket = iocontext->m_socket;
+	iocon_new_body->m_socket = recvsoc;
 	std::string filename =dir;
 	FILE* pFile = NULL;
 	fopen_s(&pFile, filename.c_str(), "rb");
 	if (pFile == NULL)
 	{
-		std::cout << "open file error" << iocontext->m_socket;
+		std::cout << "open file error" << recvsoc;
 		return 0;
 	}
+	std::cout << "打开文件" << std::endl;
 	fseek(pFile, 0, SEEK_END);//move fseek to EOF
 	int bufferlength = ftell(pFile); //This is the length of file
 	iocon_new_body->m_buffer[bufferlength] = '\0';
@@ -257,16 +276,30 @@ void SERVER::_dosendhtml(So_context* socontext, Iocontex* iocontext, DWORD threa
 	
 }
 
-void SERVER::remove(So_context* socontext, Iocontex* iocontext)
+bool SERVER::remove(So_context* socontext, Iocontex* iocontext)
 {
-	std::vector<Iocontex*>::iterator it = socontext->array_IoContext.begin();
-	while (iocontext != *it)
-	{
-		it=it+1;		
-	}
-	socontext->array_IoContext.erase(it);
-	delete iocontext;//.....................释放掉之前new的空间，很重要
-	iocontext = nullptr;
+		if (iocontext == nullptr)
+		{
+			return 0;
+		}
+		std::vector<Iocontex*>::iterator it;
+		it = socontext->array_IoContext.begin();
+		while (iocontext != *it )
+		{
+			it = it + 1;
+			if (it == socontext->array_IoContext.end())
+			{
+				if (iocontext != *it)
+					return 0;
+				else
+					break;
+			}
+				
+		}
+		socontext->array_IoContext.erase(it);
+		delete iocontext;//.....................释放掉之前new的空间，很重要
+		iocontext = nullptr;
+		return 0;
 }
 
 void SERVER::init(SOCKET sock)
@@ -295,22 +328,44 @@ void SERVER::analyze(std::string& request)
 		{
 			request.erase(ind, 1);
 			request.insert(ind, "\\");    
-			std::cout << request << std::endl;
+			//std::cout << request << std::endl;
 		}	
 	}
 }
 
-void SERVER::removeso(So_context* socontext)
+bool SERVER::removeso(So_context* socontext)
 {
 	EnterCriticalSection(&Cri_list);
 	std::vector<So_context*>::iterator it = solist.begin();
+	if (socontext == nullptr)
+	{
+		LeaveCriticalSection(&Cri_list);
+		return 0;
+	}
 	while (socontext != *it)
 	{
 		it = it + 1;
+		if (it == solist.end())
+		{
+			if (socontext != *it)
+			{
+				LeaveCriticalSection(&Cri_list);
+				return 0;
+			}
+			else
+				break;
+		}
 	}
+	std::cout << "removeso" << std::endl;
 	solist.erase(it);
 	delete socontext;//.....................释放掉之前new的空间，很重要
 	socontext = nullptr;
 	LeaveCriticalSection(&Cri_list);
+	return 0;
+}
+
+void SERVER::creatmysqltask()
+{
+
 }
 

@@ -32,9 +32,10 @@ private:
 	BOOL _postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn, const std::string& OKformat,std::string dir);
 	void _dosend(So_context* socontext, Iocontex* iocontext, DWORD threadn);
 	void _dosendhtml(So_context* socontext, Iocontex* iocontext, DWORD threadn);
-	void remove(So_context* socontext, Iocontex* iocontext);
-	void removeso(So_context* socontext);
+	bool remove(So_context* socontext, Iocontex* iocontext);
+	bool removeso(So_context* socontext);
 	void analyze(std::string& request);
+	void creatmysqltask();
 public:
 	std::vector<So_context*>solist;
 	CRITICAL_SECTION Cri_list;
