@@ -1,0 +1,42 @@
+CREATE SCHEMA userpassword ;
+USE serpassword;
+DROP TABLE IF EXISTS user;
+CREATE TABLE user
+(
+iduser INT,
+user_name VARCHAR(45),
+password VARCHAR(45),
+change_time VARCHAR(45),
+primary key(iduser)
+);
+store_procedure如下
+CREATE DEFINER=root@localhost PROCEDURE user_name_new(
+user_name_new varchar(45),
+user_password_new varchar(45)
+)
+BEGIN
+IF NOT EXISTS
+(select iduser
+from user
+where user_name=user_name_new) THEN
+INSERT INTO user (user_name,password,change_time)
+VALUE
+( user_name_new,
+user_password_new,
+date_format(
+Now(),'%Y-%M-%D_%H:%i')
+);
+ELSE
+UPDATE user
+SET password=user_password_new,
+change_time=date_format(
+Now(),'%Y-%M-%D_%H:%i')
+WHERE iduser=
+(
+select* from(
+select iduser
+from user
+where user_name=user_name_new) as ali
+);
+END IF;
+END
