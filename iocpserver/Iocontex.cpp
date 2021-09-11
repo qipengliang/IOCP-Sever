@@ -3,6 +3,7 @@
 
 Iocontex::Iocontex()
 {
+	dir = "";
 	m_socket = INVALID_SOCKET;
 	ZeroMemory(&m_overlap, sizeof(m_overlap));
 	m_PostType = PostType::UNKNOWN;

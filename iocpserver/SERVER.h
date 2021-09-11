@@ -7,6 +7,7 @@
 #include<iostream>
 #include<string>
 #include"So_context.h"
+#include"MysqlConn.h"
 #define RELEASE_ARRAY(x) {if(x != nullptr ){delete[] x;x=nullptr;}} 
 #define RELEASE_POINTER(x) {if(x != nullptr ){delete x;x=nullptr;}} 
 #define RELEASE_HANDLE(x) {if(x != nullptr && x!=INVALID_HANDLE_VALUE)\
@@ -26,7 +27,8 @@ private:
 	LPFN_GETACCEPTEXSOCKADDRS m_lpfnGetAcceptExSockAddrs;
 	//struct sockaddr_in sever_add;
 	HANDLE m_iocp;
-
+	MysqlConn s_mysql;
+	TPool* s_threadp;
 	void _doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes, DWORD threadid);
 	void _dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes, DWORD threadn);
 	BOOL _postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn, const std::string& OKformat,std::string dir);
@@ -35,13 +37,14 @@ private:
 	bool remove(So_context* socontext, Iocontex* iocontext);
 	bool removeso(So_context* socontext);
 	void analyze(std::string& request);
-	void creatmysqltask();
+	void creatmysqltask(std::string query);
+	BOOL _postsendbody(So_context* socontext, Iocontex* iocontext, DWORD threadn);
 public:
 	std::vector<So_context*>solist;
 	CRITICAL_SECTION Cri_list;
 	static DWORD WINAPI workthread(LPVOID param);
 	void init(SOCKET sock);
-	SERVER(HANDLE IOCP);
+	SERVER(HANDLE IOCP, MysqlConn mysql,TPool* threadpool);
 	~SERVER();
 };
 

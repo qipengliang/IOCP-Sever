@@ -6,7 +6,7 @@
 
 
 
-SERVER::SERVER(HANDLE IOCP) :m_lpfnAcceptEx(nullptr), m_lpfnGetAcceptExSockAddrs(nullptr), m_iocp(IOCP)
+SERVER::SERVER(HANDLE IOCP, MysqlConn mysql,TPool* threadpool) :m_lpfnAcceptEx(nullptr), m_lpfnGetAcceptExSockAddrs(nullptr), m_iocp(IOCP), s_mysql(mysql), s_threadp(threadpool)
 {
 	
 }
@@ -33,9 +33,8 @@ DWORD WINAPI SERVER::workthread(LPVOID parameter)
 		OVERLAPPED* lpoverlapped = nullptr;
 		//等待事件发生，若无事件发生则线程阻塞
 		const BOOL bRet = GetQueuedCompletionStatus(iocpmodel->m_iocp, &lpnumberofbytes, (PULONG_PTR)&pSocontext, &lpoverlapped, INFINITE);
-		std::cout<<pSocontext->m_socket;
 		//判断线程结束信号
-		if (NULL == (DWORD)pSocontext)
+		if (NULL == (PULONG_PTR)pSocontext)
 		{
 			break;
 		}
@@ -69,12 +68,12 @@ DWORD WINAPI SERVER::workthread(LPVOID parameter)
 		}
 			break;
 		case PostType::SEND:
-		{
+		{					   std::cout << "send" << pSocontext->m_socket<< std::endl;
 							   iocpmodel->_dosend(pSocontext, piocontext, para->threadid);
 		}
 			break;
 		case PostType::SENDHTML:
-		{
+		{						std::cout << "sendhtml" << pSocontext->m_socket<<std::endl;
 								iocpmodel->_dosendhtml(pSocontext, piocontext, para->threadid);
 		}
 			break;
@@ -112,8 +111,8 @@ void SERVER::_doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumbe
 	iocon_new->m_PostType = PostType::RECV;
 	Socon_new->m_socket = iocontext->m_socket;
 	Socon_new->array_IoContext.push_back(iocon_new);
-	memcpy(&(Socon_new->m_ClientAddr),clientaddr, sizeof(SOCKADDR_IN));
-
+	memcpy(&(Socon_new->m_ClientAddr),clientaddr, remoteLen);
+	std::cout << "cedian1" << std::endl;
 	EnterCriticalSection(&Cri_list);
 	solist.push_back(Socon_new);
 	LeaveCriticalSection(&Cri_list);
@@ -147,8 +146,8 @@ void SERVER::_doaccept(So_context* socontext, Iocontex* iocontext, DWORD lpnumbe
 
 void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumberofbytes,DWORD threadn)
 {
-	char recv_result[MAX_BUFFERLEN];
-	memcpy(recv_result, iocontext->m_wsaBuf.buf, MAX_BUFFERLEN);
+	char recv_result[1024];
+	memcpy(recv_result, iocontext->m_wsaBuf.buf, 1024);
 	if (lpnumberofbytes==0)
 	{
 		std::cout << "关闭" << socontext->m_socket << std::endl;
@@ -162,7 +161,7 @@ void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumbero
 	std::string Head;
 	if (method == "GET")
 	{
-		int indend = req.find("HTTP");
+		auto indend = req.find("HTTP");
 		std::string dir=req.substr(4,indend-(4));
 		std::cout << dir << std::endl;
 		if (dir == "/ ")
@@ -173,7 +172,7 @@ void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumbero
 		}
 		else if (dir.find('/?') == 1)
 		{
-			int split = dir.find('&');
+			auto split = dir.find('&');
 			std::string username = dir.substr(11,split-11);
 			std::string password = dir.substr(split + 10);
 			std::cout << "用户名=" << username << "\n密码=" << password << std::endl;
@@ -181,7 +180,9 @@ void SERVER::_dorecv(So_context* socontext, Iocontex* iocontext, DWORD lpnumbero
 			dir = "C:\\Users\\ncslab\\Desktop\\C++ test\\多人聊天室\\多人聊天室\\server\\acc.html";
 			_postsend(socontext, iocontext, threadn, Head, dir);
            //调用线程池，建立线程任务，将usernme和password写入数据库
-			creatmysqltask();
+		   //由于本人不会前端，所以假设服务器需要分析数据内容，并决定存放的表和执行的query。实际上，这部分工作可由前端完成，服务器只调用前端传回的query即可。
+			std::string query = "call namepassword.user_name_new('" + username + "', '" + password + "')";
+			creatmysqltask(query);
 		}
 		else
 		{
@@ -202,6 +203,7 @@ BOOL SERVER::_postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn
 	remove(socontext, iocontext);
 	std::cout << OKHeaderFormat << std::endl;
 	Iocontex* iocon_new_head=new Iocontex;
+	iocon_new_head->dir = dir;
 	iocon_new_head->m_PostType = PostType::SEND;
 	iocon_new_head->m_socket = recvsoc;
 	memcpy(iocon_new_head->m_buffer, OKHeaderFormat.c_str(), OKHeaderFormat.length());
@@ -214,11 +216,20 @@ BOOL SERVER::_postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn
 			&iocon_new_head->m_wsaBuf, 1, &dwSendNumBytes, dwFlags,
 			&iocon_new_head->m_overlap, NULL);
 	std::cout << "post head" << recvsoc << std::endl;
+	return 0;
+}
+
+BOOL SERVER::_postsendbody(So_context* socontext, Iocontex* iocontext, DWORD threadn)
+{
+	//投递发送http协议头
+	SOCKET recvsoc = iocontext->m_socket;
+	std::string dir = iocontext->dir;
+	remove(socontext, iocontext);
 	//打开文件，投递发送数据
 	Iocontex* iocon_new_body = new Iocontex;
 	iocon_new_body->m_PostType = PostType::SENDHTML;
 	iocon_new_body->m_socket = recvsoc;
-	std::string filename =dir;
+	std::string filename = dir;
 	FILE* pFile = NULL;
 	fopen_s(&pFile, filename.c_str(), "rb");
 	if (pFile == NULL)
@@ -226,10 +237,10 @@ BOOL SERVER::_postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn
 		std::cout << "open file error" << recvsoc;
 		return 0;
 	}
-	std::cout << "打开文件" << std::endl;
 	fseek(pFile, 0, SEEK_END);//move fseek to EOF
 	int bufferlength = ftell(pFile); //This is the length of file
 	iocon_new_body->m_buffer[bufferlength] = '\0';
+	std::cout << "打开文件" << std::endl;
 	bufferlength++; // place for'\0'
 	fseek(pFile, 0, SEEK_SET); //move back
 	std::cout << "bufferlength" << bufferlength << std::endl;
@@ -242,25 +253,25 @@ BOOL SERVER::_postsend(So_context* socontext, Iocontex* iocontext, DWORD threadn
 	const DWORD dwFlags_1 = 0;
 	DWORD dwSendNumBytes_1 = 0;
 	const int nRet_1 = WSASend(iocon_new_body->m_socket,
-			&iocon_new_body->m_wsaBuf, 1, &dwSendNumBytes_1, dwFlags_1,
-			&iocon_new_body->m_overlap, NULL);
+		&iocon_new_body->m_wsaBuf, 1, &dwSendNumBytes_1, dwFlags_1,
+		&iocon_new_body->m_overlap, NULL);
 	std::cout << "sb" << dwSendNumBytes_1 << std::endl;
 	if (SOCKET_ERROR == nRet_1)
-	{ 
-			int nErr = WSAGetLastError();
-			if (WSA_IO_PENDING != nErr)
-			{
-				std::cout << "投递WSASend失败！err=%d" << std::endl;
-			}
+	{
+		int nErr = WSAGetLastError();
+		if (WSA_IO_PENDING != nErr)
+		{
+			std::cout << "投递WSASend失败！err=%d" << std::endl;
+		}
 	}
-	return 1;	
+	return 1;
 }
 
 void SERVER::_dosend(So_context* socontext, Iocontex* iocontext, DWORD threadn)
 {
 	
 	std::cout << "already send head " << std::endl;
-	remove(socontext, iocontext);
+	_postsendbody(socontext, iocontext, threadn);
 	
 }
 
@@ -299,6 +310,7 @@ bool SERVER::remove(So_context* socontext, Iocontex* iocontext)
 		socontext->array_IoContext.erase(it);
 		delete iocontext;//.....................释放掉之前new的空间，很重要
 		iocontext = nullptr;
+		std::cout << "remove io " << std::endl;
 		return 0;
 }
 
@@ -356,7 +368,7 @@ bool SERVER::removeso(So_context* socontext)
 				break;
 		}
 	}
-	std::cout << "removeso" << std::endl;
+	std::cout << "removeso" << solist.size()<<std::endl;
 	solist.erase(it);
 	delete socontext;//.....................释放掉之前new的空间，很重要
 	socontext = nullptr;
@@ -364,8 +376,9 @@ bool SERVER::removeso(So_context* socontext)
 	return 0;
 }
 
-void SERVER::creatmysqltask()
+void SERVER::creatmysqltask(std::string query)
 {
-
+	s_threadp->task_ennqueue(MysqlConn::Query,&s_mysql.mysql, query);
 }
+
 

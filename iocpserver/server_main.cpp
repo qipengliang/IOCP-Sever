@@ -13,13 +13,19 @@
 #include <MSWSock.h>
 #include <WinNt.h>
 #include<memory>
+#include"Mysqlconn.h"
 
 #define MAX_SOCKET 5;
-
+#if defined(_WIN64)
+typedef unsigned __int64 ULONG_PTR;
+#else
+typedef unsigned long ULONG_PTR;
+#endif
 
 void main()
 {
-	
+	MysqlConn m_mysql;//启动数据库
+	TPool threadpool(4);//启动线程池
 	//1.主线程建立完成端口
 	HANDLE IOCP=CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
 	//2.建立监听socket
@@ -37,14 +43,14 @@ void main()
 	So_context* listen_socket_context = new So_context;
 	listen_socket_context->m_socket = listen_socket;
 	//3.完成socket和完成端口的绑定
-	CreateIoCompletionPort((HANDLE)listen_socket, IOCP, (DWORD)listen_socket_context, 0);//4.socket_context是指向socket_context结构体的指针,为io消息包,绑定socket和iocp
+	CreateIoCompletionPort((HANDLE)listen_socket, IOCP, (ULONG_PTR)listen_socket_context, 0);//4.socket_context是指向socket_context结构体的指针,为io消息包,绑定socket和iocp
 	sever_add.sin_family = AF_INET;
 	sever_add.sin_addr.S_un.S_addr = INADDR_ANY; //INADDR_ANY:本机IP地址
 	sever_add.sin_port = htons(4000);
 	::bind(listen_socket, (sockaddr*)&sever_add, sizeof(sever_add));
 
 	//4.创建n个线程,SERVER类负责管理线程函数以及创建的socontext
-	SERVER* ioserver=new SERVER(IOCP);
+	SERVER* ioserver=new SERVER(IOCP, m_mysql,&threadpool);
 	//得到accpetex，和GetAcceptExSockAddrs的函数指针
 	ioserver->init(listen_socket);
 
